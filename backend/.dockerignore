@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log
+.DS_Store
+public/uploads-temp/*
+public/encrypted-temp/*
+public/cloud/*
+config/.env
+config/get-dropbox-token.js
+*.log

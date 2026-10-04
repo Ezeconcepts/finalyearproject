@@ -1,0 +1,61 @@
+services:
+  # ── MongoDB ─────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: fortefile_mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - fortefile_net
+
+  # ── Backend ─────────────────────────────────────────────────────────
+  backend:
+    build: ./backend
+    container_name: fortefile_backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    env_file:
+      - ./backend/config/.env
+    environment:
+      # Override MONGO_URI to point to the Docker mongo service
+      MONGO_URI: mongodb://mongo:27017/forteFile
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    volumes:
+      # Persist uploaded/encrypted files across container restarts
+      - uploads:/app/public/uploads-temp
+      - encrypted:/app/public/encrypted-temp
+      - cloud:/app/public/cloud
+    networks:
+      - fortefile_net
+
+  # ── Frontend ─────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Points the frontend at the backend container
+        VITE_API_URL: http://localhost:3001
+    container_name: fortefile_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    networks:
+      - fortefile_net
+
+# ── Named volumes (data persists between restarts) ────────────────────
+volumes:
+  mongo_data:
+  uploads:
+  encrypted:
+  cloud:
+
+# ── Shared network ────────────────────────────────────────────────────
+networks:
+  fortefile_net:
+    driver: bridge

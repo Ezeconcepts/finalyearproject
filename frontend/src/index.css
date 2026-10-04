@@ -1,0 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Work+Sans:ital,wght@0,100..900;1,100..900&display=swap');
+body{
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Work Sans", sans-serif;
+}
+
+
+img{
+    width: 65%;
+    max-width: 100%;
+}
+button, .main{
+    color: #FAFAFA;
+}
+button{
+    cursor: pointer;
+}
+
+.white-outline {
+ fill: none;
+ stroke: white;
+ stroke-width: 2;
+}

@@ -1,0 +1,42 @@
+#overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 9998;
+}
+
+.notifMain {
+  border-radius: 9px;
+  width: 18em;
+  position: absolute;
+  z-index: 9999;
+  /* display: none; */
+  background-color: white;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.innerNotifMain {
+  padding: 1.5em 3.5em;
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+  color: black;
+}
+.yesBtn {
+  border: 1px solid #fb2b2b;
+  background-color: #fb2b2b;
+  color: white;
+  border-radius: 5px;
+  padding: 2px;
+}
+
+.noBtn {
+  border: 1px solid black;
+  border-radius: 5px;
+  padding: 2px;
+  color: black;
+}

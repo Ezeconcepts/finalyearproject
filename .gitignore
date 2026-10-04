@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Environment secrets — NEVER commit these
+backend/config/.env
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temp upload directories (runtime data)
+backend/public/uploads-temp/*
+backend/public/encrypted-temp/*
+backend/public/cloud/*
+
+# Frontend build output
+frontend/dist/
+
+# Docker
+docker-compose.override.yml
+
+output
+presentation_assets
+ForteFile_Defense_Deck.pptx
+*.docx
+*.pptx
+*.png
+*.jpeg
+*.jpg
+*.presentation-build-v1
+*.presentation-build-v2
+*.html
+.presentation-build-v1
+.presentation-build-v2
+*.env
+.env
+backend/config/.env
+
