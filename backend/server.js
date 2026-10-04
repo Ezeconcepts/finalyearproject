@@ -17,7 +17,7 @@ const zip = require("express-zip");
 const users = require("./routes/users");
 const files = require("./routes/files");
 
-app.use(cors());
+app.use(cors({ origin: "https://frontend-r6c1.onrender.com" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static("public"));
