@@ -27,9 +27,9 @@ presentation_assets
 ForteFile_Defense_Deck.pptx
 *.docx
 *.pptx
-*.png
-*.jpeg
-*.jpg
+# *.png
+# *.jpeg
+# *.jpg
 *.presentation-build-v1
 *.presentat
 .presentation-build-v1
