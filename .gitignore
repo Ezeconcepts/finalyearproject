@@ -31,11 +31,10 @@ ForteFile_Defense_Deck.pptx
 *.jpeg
 *.jpg
 *.presentation-build-v1
-*.presentation-build-v2
-*.html
+*.presentat
 .presentation-build-v1
 .presentation-build-v2
 *.env
 .env
 backend/config/.env
-
+ 

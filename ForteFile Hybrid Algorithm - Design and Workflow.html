@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ForteFile — Hybrid Algorithm Design &amp; Workflow</title>
+<style>
+  :root{ --ink:#1c2430; --muted:#5b6675; --line:#e2e6ec; --accent:#1746c9; --bg:#f7f9fc; --code:#0f172a; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+        color:var(--ink); background:var(--bg); line-height:1.55; }
+  .wrap{ max-width:1000px; margin:0 auto; padding:40px 28px 80px; }
+  header.title{ border-bottom:3px solid var(--accent); padding-bottom:16px; margin-bottom:28px; }
+  h1{ font-size:26px; margin:0 0 6px; }
+  h2{ font-size:20px; margin:38px 0 12px; padding-top:10px; border-top:1px solid var(--line); }
+  h3{ font-size:16px; margin:26px 0 8px; color:var(--accent); }
+  .sub{ color:var(--muted); font-size:14px; }
+  p{ font-size:15px; }
+  table{ border-collapse:collapse; width:100%; margin:12px 0; font-size:14px; }
+  th,td{ border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th{ background:#eef2fb; }
+  code{ font-family:"SF Mono",Consolas,Menlo,monospace; background:#eef1f6; padding:1px 5px; border-radius:4px; font-size:13px; }
+  pre.code{ background:var(--code); color:#e6edf7; padding:16px 18px; border-radius:10px; overflow:auto;
+            font-family:"SF Mono",Consolas,Menlo,monospace; font-size:13px; line-height:1.5; }
+  pre.code .kw{ color:#7ee0a2; } pre.code .cm{ color:#8aa0b6; font-style:italic; }
+  .diagram{ background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px; margin:14px 0; overflow:auto; }
+  .card{ background:#fff; border:1px solid var(--line); border-radius:12px; padding:6px 20px; }
+  .toc a{ color:var(--accent); text-decoration:none; } .toc a:hover{ text-decoration:underline; }
+  .pill{ display:inline-block; background:#eef2fb; color:var(--accent); border:1px solid #d6e0f7;
+         border-radius:999px; padding:3px 12px; font-size:12px; font-weight:600; margin-bottom:10px; }
+  @media print{ body{ background:#fff; } .diagram,.card{ break-inside:avoid; } h2{ break-before:auto; } }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="title">
+    <span class="pill">Proposed Algorithm</span>
+    <h1>ForteFile — Hybrid Cryptographic Algorithm: Design &amp; Workflow</h1>
+    <div class="sub">AES-256-GCM (data) + ECC / secp256k1 with ECIES key-wrapping (key management) + server master-key at-rest protection</div>
+  </header>
+
+  <div class="card toc">
+    <p><strong>Contents:</strong>
+      <a href="#prim">1. Primitives</a> ·
+      <a href="#obj">2. Key/Data objects</a> ·
+      <a href="#routines">3. Algorithm routines (pseudocode)</a> ·
+      <a href="#flow">4. Flowcharts</a> ·
+      <a href="#seq">5. UML sequence</a> ·
+      <a href="#class">6. UML class</a> ·
+      <a href="#act">7. UML activity</a> ·
+      <a href="#block">8. Block diagrams</a> ·
+      <a href="#sec">9. Security summary</a>
+    </p>
+  </div>
+
+  <h2 id="prim">1. Cryptographic Primitives &amp; Notation</h2>
+  <table>
+    <tr><th>Symbol</th><th>Meaning</th></tr>
+    <tr><td><code>secp256k1</code></td><td>Elliptic curve for all ECC operations; <code>G</code> is its base point</td></tr>
+    <tr><td><code>d_u, Q_u</code></td><td>User ECC private / public key, <code>Q_u = d_u · G</code></td></tr>
+    <tr><td><code>d_e, Q_e</code></td><td>One-time ephemeral ECC pair generated per key-wrap</td></tr>
+    <tr><td><code>K_m</code></td><td>Server master key (256-bit) — protects private keys at rest</td></tr>
+    <tr><td><code>K_f, N_f</code></td><td>Per-file symmetric key (256-bit) and GCM nonce (96-bit), both random</td></tr>
+    <tr><td><code>ECDH(a,B)</code></td><td>Elliptic-Curve Diffie–Hellman shared secret</td></tr>
+    <tr><td><code>HKDF(s,salt,info,L)</code></td><td>HKDF-SHA256 deriving <code>L</code> bytes</td></tr>
+    <tr><td><code>AEAD_Enc / AEAD_Dec</code></td><td>AES-256-GCM authenticated encryption / decryption (128-bit tag)</td></tr>
+  </table>
+
+  <h2 id="obj">2. Key &amp; Data Objects</h2>
+  <pre class="code">User             = { email, passwordHash(bcrypt), eccPublicKey Q_u, eccPrivateKeyEnc }
+eccPrivateKeyEnc = iv : tag : ciphertext            <span class="cm"># d_u encrypted under K_m</span>
+WrappedKey W     = { Q_e, iv_w, tag_w, ct_w }        <span class="cm"># ECIES output protecting K_f</span>
+Encrypted file   = MAGIC("FF02") + len(header) + header(JSON) + C
+header           = { alg, Q_e, iv_w, tag_w, wrappedKey=ct_w, fileIv=N_f, fileTag=tag_f }
+C                = AES-256-GCM ciphertext of the plaintext file</pre>
+
+  <h2 id="routines">3. Algorithm Routines (Pseudocode)</h2>
+
+  <h3>3.1 KeyGen — user registration</h3>
+  <pre class="code"><span class="kw">KeyGen</span>():
+    (d_u, Q_u) &larr; ECC.GenerateKeyPair(secp256k1)
+    store Q_u                              <span class="cm"># public, in the clear</span>
+    store eccPrivateKeyEnc &larr; ProtectPrivateKey(d_u)
+    return (Q_u, eccPrivateKeyEnc)</pre>
+
+  <h3>3.2 ProtectPrivateKey / UnprotectPrivateKey — at-rest KMS</h3>
+  <pre class="code"><span class="kw">ProtectPrivateKey</span>(d):
+    iv &larr; Random(12 bytes)
+    (ct, tag) &larr; AEAD_Enc(key=K_m, nonce=iv, plaintext=d)
+    return hex(iv) : hex(tag) : hex(ct)
+
+<span class="kw">UnprotectPrivateKey</span>(blob):
+    (iv, tag, ct) &larr; split(blob, ":")
+    d &larr; AEAD_Dec(key=K_m, nonce=iv, ciphertext=ct, tag=tag)   <span class="cm"># throws if tampered</span>
+    return d</pre>
+
+  <h3>3.3 ECIES.Wrap / ECIES.Unwrap — protect the per-file key with ECC</h3>
+  <pre class="code"><span class="kw">ECIES.Wrap</span>(K_f, Q_u):                    <span class="cm"># encrypt K_f TO the user public key</span>
+    (d_e, Q_e) &larr; ECC.GenerateKeyPair(secp256k1)   <span class="cm"># ephemeral</span>
+    S   &larr; ECDH(d_e, Q_u)                          <span class="cm"># shared secret</span>
+    K_w &larr; HKDF(S, salt=Q_e, info="forteFile-ecies-v2", L=32)
+    iv_w &larr; Random(12 bytes)
+    (ct_w, tag_w) &larr; AEAD_Enc(key=K_w, nonce=iv_w, plaintext=K_f)
+    return { Q_e, iv_w, tag_w, ct_w }
+
+<span class="kw">ECIES.Unwrap</span>({Q_e, iv_w, tag_w, ct_w}, d_u):
+    S   &larr; ECDH(d_u, Q_e)                          <span class="cm"># same secret (ECDH symmetry)</span>
+    K_w &larr; HKDF(S, salt=Q_e, info="forteFile-ecies-v2", L=32)
+    K_f &larr; AEAD_Dec(key=K_w, nonce=iv_w, ciphertext=ct_w, tag=tag_w)
+    return K_f</pre>
+
+  <h3>3.4 EncryptFile — hybrid encryption</h3>
+  <pre class="code"><span class="kw">EncryptFile</span>(P, Q_u):                     <span class="cm"># P = plaintext file bytes</span>
+    K_f &larr; Random(32 bytes)                 <span class="cm"># fresh per-file AES-256 key</span>
+    N_f &larr; Random(12 bytes)                 <span class="cm"># fresh per-file GCM nonce</span>
+    (C, tag_f) &larr; AEAD_Enc(key=K_f, nonce=N_f, plaintext=P)
+    W &larr; ECIES.Wrap(K_f, Q_u)
+    header &larr; JSON{ alg, Q_e:W.Q_e, iv_w:W.iv_w, tag_w:W.tag_w,
+                   wrappedKey:W.ct_w, fileIv:N_f, fileTag:tag_f }
+    return MAGIC("FF02") + uint32(len(header)) + header + C</pre>
+
+  <h3>3.5 DecryptFile — hybrid decryption</h3>
+  <pre class="code"><span class="kw">DecryptFile</span>(blob, d_u):
+    assert blob[0..4) == MAGIC("FF02")      <span class="cm"># else route to legacy CBC path</span>
+    hlen   &larr; uint32(blob[4..8))
+    header &larr; JSON(blob[8 .. 8+hlen))
+    C      &larr; blob[8+hlen .. end)
+    K_f &larr; ECIES.Unwrap(header, d_u)
+    P   &larr; AEAD_Dec(key=K_f, nonce=header.fileIv, ciphertext=C, tag=header.fileTag)
+    return P                                 <span class="cm"># throws on tamper -> fail closed</span></pre>
+
+  <h3>3.6 End-to-end orchestration</h3>
+  <pre class="code"><span class="kw">UPLOAD</span>(file, user):
+    P &larr; read(file);  Q_u &larr; lookupPublicKey(user)
+    container &larr; EncryptFile(P, Q_u)
+    storeToCloud(container as "&lt;userId&gt;_&lt;date&gt;_&lt;name&gt;.enc");  deletePlaintext(file)
+
+<span class="kw">DOWNLOAD</span>(ref, user):
+    container &larr; fetchFromCloud(ref)
+    if container starts with MAGIC("FF02"):
+        d_u &larr; UnprotectPrivateKey(user.eccPrivateKeyEnc)   <span class="cm"># unlock with K_m</span>
+        P &larr; DecryptFile(container, d_u)
+    else:
+        P &larr; DecryptLegacyCBC(container)                    <span class="cm"># backward compatibility</span>
+    return P</pre>
+
+  <h2 id="flow">4. Flowcharts</h2>
+  <h3>4.1 Encryption</h3>
+  <pre class="mermaid diagram">
+flowchart TD
+    A([Start: plaintext file P]) --> B[Generate random AES-256 key K_f]
+    B --> C[Generate random 96-bit nonce N_f]
+    C --> D["AES-256-GCM encrypt: C, tag_f = Enc(K_f, N_f, P)"]
+    D --> E[Load user ECC public key Q_u]
+    E --> F[[ECIES.Wrap K_f with Q_u]]
+    F --> G["Assemble header: Q_e, iv_w, tag_w, wrappedKey, N_f, tag_f"]
+    G --> H[Container = MAGIC + len + header + C]
+    H --> I([Upload .enc to cloud])
+  </pre>
+
+  <h3>4.2 Decryption</h3>
+  <pre class="mermaid diagram">
+flowchart TD
+    A([Start: fetch .enc container]) --> B{Starts with MAGIC FF02?}
+    B -- No --> L[Legacy AES-256-CBC decrypt]
+    B -- Yes --> C[Parse header + ciphertext C]
+    C --> D["Unlock d_u: UnprotectPrivateKey with K_m"]
+    D --> E[[ECIES.Unwrap -> recover K_f]]
+    E --> F[AES-256-GCM decrypt + verify tag_f]
+    F --> G{Tag valid?}
+    G -- No --> X([Reject: fail closed])
+    G -- Yes --> H([Return plaintext P])
+    L --> H
+  </pre>
+
+  <h2 id="seq">5. UML Sequence Diagram — Upload then Download</h2>
+  <pre class="mermaid diagram">
+sequenceDiagram
+    actor U as User
+    participant FE as Frontend (React)
+    participant BE as Backend Controller
+    participant DB as User Model / KMS (K_m)
+    participant CL as Cloud (Dropbox)
+    Note over U,CL: ENCRYPTION / UPLOAD
+    U->>FE: select file, click Encrypt
+    FE->>BE: POST /encrypt-multiple
+    BE->>DB: get user ECC public key Q_u
+    DB-->>BE: Q_u
+    BE->>BE: K_f, N_f random; AES-256-GCM -> C, tag_f
+    BE->>BE: ECIES.Wrap(K_f, Q_u) -> W
+    BE->>CL: upload .enc container
+    CL-->>BE: ok
+    BE-->>FE: success
+    Note over U,CL: DECRYPTION / DOWNLOAD
+    U->>FE: select file, click Download
+    FE->>BE: POST /download-multiple
+    BE->>CL: fetch .enc
+    CL-->>BE: container
+    BE->>DB: unlock d_u with K_m
+    DB-->>BE: d_u
+    BE->>BE: ECIES.Unwrap -> K_f; AES-256-GCM decrypt+verify
+    BE-->>FE: plaintext (zipped)
+    FE-->>U: file downloaded
+  </pre>
+
+  <h2 id="class">6. UML Class Diagram — Modules</h2>
+  <pre class="mermaid diagram">
+classDiagram
+    class CryptoUtil {
+        +generateEccKeyPair() KeyPair
+        +protectPrivateKey(d) string
+        +unprotectPrivateKey(blob) d
+        +eciesWrap(K_f, Q_u) WrappedKey
+        +eciesUnwrap(W, d_u) K_f
+        +encryptFileHybrid(P, Q_u) Buffer
+        +decryptFileHybrid(blob, d_u) Buffer
+        +decryptLegacyCbc(blob) Buffer
+    }
+    class User {
+        +String email
+        +String passwordHash
+        +String eccPublicKey
+        +String eccPrivateKeyEnc
+        +comparePassword(candidate) bool
+    }
+    class FileController {
+        +encryptFile(req,res)
+        +fileToCloud(req,res)
+        +downloadFilesFromCloud(req,res)
+    }
+    class EncryptedContainer {
+        +bytes MAGIC
+        +uint32 headerLen
+        +Header header
+        +bytes ciphertext
+    }
+    class Header {
+        +String alg
+        +hex ephemeralPublicKey
+        +hex wrapIv
+        +hex wrapTag
+        +hex wrappedKey
+        +hex fileIv
+        +hex fileTag
+    }
+    FileController --> CryptoUtil : uses
+    FileController --> User : reads keys
+    CryptoUtil --> EncryptedContainer : produces
+    EncryptedContainer *-- Header
+  </pre>
+
+  <h2 id="act">7. UML Activity Diagram — Encrypt Activity</h2>
+  <pre class="mermaid diagram">
+flowchart TD
+    S([start]) --> A[Receive file + user id]
+    A --> B[Fetch Q_u for user]
+    B --> C{Q_u exists?}
+    C -- No --> E1[Return error: no key]
+    C -- Yes --> D[Generate K_f, N_f]
+    D --> E[AES-256-GCM encrypt data]
+    E --> F[Ephemeral ECDH + HKDF -> K_w]
+    F --> G[Wrap K_f under K_w GCM]
+    G --> H[Serialize header + ciphertext]
+    H --> I[Upload .enc to cloud]
+    I --> T([end])
+    E1 --> T
+  </pre>
+
+  <h2 id="block">8. Block Diagrams</h2>
+  <h3>8.1 Data path vs Key path</h3>
+  <pre class="mermaid diagram">
+flowchart LR
+    subgraph DATA[Data path - symmetric]
+        P[Plaintext file P] --> GCM["AES-256-GCM (K_f, N_f)"]
+        GCM --> C[Ciphertext C + tag_f]
+    end
+    subgraph KEY[Key path - asymmetric]
+        KF[Random file key K_f] --> ECIES["ECIES wrap: ephemeral ECDH + HKDF"]
+        QU[User public key Q_u] --> ECIES
+        ECIES --> WK[Wrapped key W]
+    end
+    KF -. supplies .-> GCM
+    C --> BOX[["Encrypted container: MAGIC + header + C"]]
+    WK --> BOX
+    subgraph REST[At-rest KMS]
+        DU[User private key d_u] --> PRT[AES-256-GCM under K_m]
+        PRT --> STORE[(eccPrivateKeyEnc in DB)]
+    end
+  </pre>
+
+  <h3>8.2 Deployment / System view</h3>
+  <pre class="mermaid diagram">
+flowchart LR
+    subgraph Client
+        B[Browser / React UI]
+    end
+    subgraph Server[Node.js Backend]
+        R[Express Routes] --> CT[File + User Controllers] --> CU["CryptoUtil (AES-GCM + ECIES)"]
+    end
+    subgraph Stores
+        M[("MongoDB: users, metadata, keys")]
+        D[("Dropbox: encrypted .enc files")]
+    end
+    B <-->|HTTPS JSON| R
+    CT <--> M
+    CT <-->|encrypted blobs| D
+  </pre>
+
+  <h2 id="sec">9. Security Properties Summary</h2>
+  <table>
+    <tr><th>Property</th><th>Mechanism</th></tr>
+    <tr><td>Confidentiality (data)</td><td>AES-256-GCM with per-file random key <code>K_f</code></td></tr>
+    <tr><td>Confidentiality (key)</td><td>ECIES wrap to user public key <code>Q_u</code> (secp256k1)</td></tr>
+    <tr><td>Integrity / tamper detection</td><td>GCM tags on data, key-wrap, and at-rest key — 100% fault detection, fail-closed</td></tr>
+    <tr><td>Key freshness</td><td>New <code>K_f</code>, <code>N_f</code>, ephemeral <code>Q_e</code> per operation</td></tr>
+    <tr><td>Diffusion</td><td>AES avalanche ≈ 50% on key/nonce change (SAC)</td></tr>
+    <tr><td>Key management</td><td>Private keys encrypted-at-rest under server master key <code>K_m</code></td></tr>
+    <tr><td>Backward compatibility</td><td>Legacy AES-256-CBC files auto-detected and still decryptable</td></tr>
+  </table>
+</div>
+<script>
+  mermaid.initialize({ startOnLoad:true, theme:'neutral', securityLevel:'loose',
+                       flowchart:{ useMaxWidth:true, htmlLabels:true } });
+</script>
+</body>
+</html>
